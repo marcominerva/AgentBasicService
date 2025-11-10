@@ -1,8 +1,5 @@
 using System.Collections.Concurrent;
-using System.ComponentModel;
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Text.Json.Serialization.Metadata;
 using AgentBasicService.Settings;
 using Azure;
 using Azure.AI.OpenAI;
@@ -55,17 +52,21 @@ builder.Services.AddAIAgent("Translator", (services, key) =>
     var chatClient = services.GetRequiredService<IChatClient>();
 
     var answerer = chatClient.CreateAIAgent(name: "Answerer",
-        instructions: "You are a helpful assistant.");
+        instructions: "You are a helpful assistant.",
+        loggerFactory: services.GetRequiredService<ILoggerFactory>(),
+        services: services);
 
-    var translator = chatClient.CreateAIAgent(name: "ResponseTranslator",
+    var responseTranslator = chatClient.CreateAIAgent(name: "ResponseTranslator",
         instructions: """
-        You are a translator. You will receive a response that may be in any language.
-        Your job is to translate it to English.
-        If the text is already in English, return it as is.
-        Return ONLY the translated text without any additional commentary.
-        """);
+            You are a translator. You will receive a response that may be in any language.
+            Your job is to translate it to English.
+            If the text is already in English, return it as is.
+            Return ONLY the translated text without any additional commentary.
+            """,
+        loggerFactory: services.GetRequiredService<ILoggerFactory>(),
+        services: services);
 
-    return AgentWorkflowBuilder.BuildSequential([answerer, translator]).AsAgent(name: key);
+    return AgentWorkflowBuilder.BuildSequential([answerer, responseTranslator]).AsAgent(name: key);
 });
 
 builder.Services.AddSingleton(services => services.GetRequiredKeyedService<AIAgent>("Default"));
@@ -88,11 +89,13 @@ app.MapPost("/api/chat", async (ChatRequest request, AIAgent agent, AgentThreadS
 {
     var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
     var thread = await agentThreadStore.GetThreadAsync(agent, conversationId);
-    
+
     var response = await agent.RunAsync(request.Message, thread);
 
     await agentThreadStore.SaveThreadAsync(agent, conversationId, thread);
 
+    // If you want to return structured output, uncomment the following code:
+    // Also, you need to add the appropriate Description attributes to the ChatResponse record.
     //var jsonSerializerOptions = new JsonSerializerOptions
     //{
     //    PropertyNameCaseInsensitive = true,
@@ -102,7 +105,7 @@ app.MapPost("/api/chat", async (ChatRequest request, AIAgent agent, AgentThreadS
 
     //var structuredOutput = await agent.RunAsync(request.Message, options: new ChatClientAgentRunOptions
     //{
-    //    ChatOptions = new ChatOptions
+    //    ChatOptions = new()
     //    {
     //        ResponseFormat = ChatResponseFormat.ForJsonSchema<ChatResponse>(jsonSerializerOptions)
     //    }
@@ -115,6 +118,7 @@ app.MapPost("/api/chat", async (ChatRequest request, AIAgent agent, AgentThreadS
 
 app.MapPost("/api/translator", async (ChatRequest request, [FromKeyedServices("Translator")] AIAgent agent) =>
 {
+    // For the sake of simplicity, we are not maintaining conversation threads in this endpoint.
     var response = await agent.RunAsync(request.Message);
     return TypedResults.Ok(new ChatResponse(string.Empty, response.Messages.LastOrDefault()?.Text!));
 });
