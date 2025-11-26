@@ -26,7 +26,7 @@ builder.Services.AddAIAgent("Default", (services, key) =>
 {
     var chatClient = services.GetRequiredService<IChatClient>();
 
-    return chatClient.CreateAIAgent(new ChatClientAgentOptions
+    return chatClient.CreateAIAgent(new()
     {
         Name = key,
         Instructions = "You are a helpful assistant that provides concise and accurate information.",
