@@ -29,13 +29,15 @@ builder.Services.AddAIAgent("Default", (services, key) =>
     return chatClient.CreateAIAgent(new()
     {
         Name = key,
-        Instructions = "You are a helpful assistant that provides concise and accurate information.",
+        ChatOptions = new()
+        {
+            Instructions = "You are a helpful assistant that provides concise and accurate information."
+        },
         ChatMessageStoreFactory = context =>
         {
             //var reducer = new MessageCountingChatReducer(4);
             var reducer = new SummarizingChatReducer(chatClient, 1, 4);
-            return new InMemoryChatMessageStore(reducer, context.SerializedState, context.JsonSerializerOptions,
-                InMemoryChatMessageStore.ChatReducerTriggerEvent.AfterMessageAdded);
+            return new InMemoryChatMessageStore(reducer, context.SerializedState, context.JsonSerializerOptions, InMemoryChatMessageStore.ChatReducerTriggerEvent.AfterMessageAdded);
         }
     },
     loggerFactory: services.GetRequiredService<ILoggerFactory>(),
