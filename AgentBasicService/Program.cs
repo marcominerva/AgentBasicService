@@ -1,8 +1,7 @@
+using System.ClientModel;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using AgentBasicService.Settings;
-using Azure;
-using Azure.AI.OpenAI;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.AI.Workflows;
@@ -17,9 +16,9 @@ builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, relo
 builder.Services.AddHttpContextAccessor();
 
 var openAiSettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
+var openAIclient = new OpenAIClient(new ApiKeyCredential(openAiSettings.ApiKey), new() { Endpoint = new(new(openAiSettings.Endpoint), "/openai/v1") });
 
-builder.Services.AddChatClient(new AzureOpenAIClient(new(openAiSettings.Endpoint),
-    new AzureKeyCredential(openAiSettings.ApiKey)).GetChatClient(openAiSettings.Deployment).AsIChatClient());
+builder.Services.AddChatClient(openAIclient.GetChatClient(openAiSettings.Deployment).AsIChatClient());
 
 builder.Services.AddSingleton<CustomAgentThreadStore>();
 
