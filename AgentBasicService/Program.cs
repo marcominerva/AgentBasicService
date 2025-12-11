@@ -16,9 +16,9 @@ builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, relo
 builder.Services.AddHttpContextAccessor();
 
 var openAiSettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
-var openAIclient = new OpenAIClient(new ApiKeyCredential(openAiSettings.ApiKey), new() { Endpoint = new(new(openAiSettings.Endpoint), "/openai/v1") });
+var openAIClient = new OpenAIClient(new ApiKeyCredential(openAiSettings.ApiKey), new() { Endpoint = new(new(openAiSettings.Endpoint), "/openai/v1") });
 
-builder.Services.AddChatClient(openAIclient.GetChatClient(openAiSettings.Deployment).AsIChatClient());
+builder.Services.AddChatClient(openAIClient.GetChatClient(openAiSettings.Deployment).AsIChatClient());
 
 builder.Services.AddSingleton<CustomAgentThreadStore>();
 
