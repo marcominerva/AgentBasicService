@@ -15,10 +15,13 @@ builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, relo
 // Add services to the container.
 builder.Services.AddHttpContextAccessor();
 
-var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
-var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new() { Endpoint = new(new(openAISettings.Endpoint), "/openai/v1") });
+builder.Services.AddChatClient(_ =>
+{
+    var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
+    var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new() { Endpoint = new(new(openAISettings.Endpoint), "/openai/v1") });
 
-builder.Services.AddChatClient(openAIClient.GetChatClient(openAISettings.Deployment).AsIChatClient());
+    return openAIClient.GetChatClient(openAISettings.Deployment).AsIChatClient();
+});
 
 builder.Services.AddSingleton<CustomAgentThreadStore>();
 
