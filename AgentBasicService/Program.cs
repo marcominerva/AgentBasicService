@@ -15,11 +15,10 @@ builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, relo
 // Add services to the container.
 builder.Services.AddHttpContextAccessor();
 
+var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
 builder.Services.AddChatClient(_ =>
 {
-    var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
     var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new() { Endpoint = new(new(openAISettings.Endpoint), "/openai/v1") });
-
     return openAIClient.GetChatClient(openAISettings.Deployment).AsIChatClient();
 });
 
@@ -138,7 +137,6 @@ public sealed class CustomAgentThreadStore(IHttpContextAccessor httpContextAcces
 {
     private readonly ConcurrentDictionary<string, JsonElement> threads = new();
 
-    /// <inheritdoc/>
     public override ValueTask SaveThreadAsync(AIAgent agent, string conversationId, AgentThread thread, CancellationToken cancellationToken = default)
     {
         var key = GetKey(conversationId, agent.Id);
@@ -146,7 +144,6 @@ public sealed class CustomAgentThreadStore(IHttpContextAccessor httpContextAcces
         return default;
     }
 
-    /// <inheritdoc/>
     public override ValueTask<AgentThread> GetThreadAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
     {
         var key = GetKey(conversationId, agent.Id);
