@@ -18,7 +18,8 @@ builder.Services.AddHttpContextAccessor();
 var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
 builder.Services.AddChatClient(_ =>
 {
-    var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new() { Endpoint = new(new(openAISettings.Endpoint), "/openai/v1") });
+    // Endpoint must end with /openai/v1 for Azure OpenAI
+    var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new() { Endpoint = new(openAISettings.Endpoint) });
     return openAIClient.GetChatClient(openAISettings.Deployment).AsIChatClient();
 });
 
