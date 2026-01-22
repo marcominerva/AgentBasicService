@@ -29,18 +29,20 @@ builder.Services.AddAIAgent("Default", (services, key) =>
 {
     var chatClient = services.GetRequiredService<IChatClient>();
 
-    return chatClient.CreateAIAgent(new()
+    return chatClient.AsAIAgent(new()
     {
         Name = key,
         ChatOptions = new()
         {
             Instructions = "You are a helpful assistant that provides concise and accurate information."
         },
-        ChatMessageStoreFactory = context =>
+        ChatMessageStoreFactory = (context, cancellationToken) =>
         {
             //var reducer = new MessageCountingChatReducer(4);
             var reducer = new SummarizingChatReducer(chatClient, 1, 4);
-            return new InMemoryChatMessageStore(reducer, context.SerializedState, context.JsonSerializerOptions, InMemoryChatMessageStore.ChatReducerTriggerEvent.AfterMessageAdded);
+            var store = new InMemoryChatMessageStore(reducer, context.SerializedState, context.JsonSerializerOptions, InMemoryChatMessageStore.ChatReducerTriggerEvent.AfterMessageAdded);
+
+            return ValueTask.FromResult<ChatMessageStore>(store);
         }
     },
     loggerFactory: services.GetRequiredService<ILoggerFactory>(),
@@ -56,12 +58,12 @@ builder.Services.AddAIAgent("Translator", (services, key) =>
 {
     var chatClient = services.GetRequiredService<IChatClient>();
 
-    var answerer = chatClient.CreateAIAgent(name: "Answerer",
+    var answerer = chatClient.AsAIAgent(name: "Answerer",
         instructions: "You are a helpful assistant.",
         loggerFactory: services.GetRequiredService<ILoggerFactory>(),
         services: services);
 
-    var responseTranslator = chatClient.CreateAIAgent(name: "ResponseTranslator",
+    var responseTranslator = chatClient.AsAIAgent(name: "ResponseTranslator",
         instructions: """
             You are a translator. You will receive a response that may be in any language.
             Your job is to translate it to English.
@@ -145,15 +147,15 @@ public sealed class CustomAgentThreadStore(IHttpContextAccessor httpContextAcces
         return default;
     }
 
-    public override ValueTask<AgentThread> GetThreadAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
+    public override async ValueTask<AgentThread> GetThreadAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
     {
         var key = GetKey(conversationId, agent.Id);
         JsonElement? threadContent = threads.TryGetValue(key, out var existingThread) ? existingThread : null;
 
         return threadContent switch
         {
-            null => new ValueTask<AgentThread>(agent.GetNewThread()),
-            _ => new ValueTask<AgentThread>(agent.DeserializeThread(threadContent.Value)),
+            null => await agent.GetNewThreadAsync(cancellationToken),
+            _ => await agent.DeserializeThreadAsync(threadContent.Value, cancellationToken: cancellationToken),
         };
     }
 
