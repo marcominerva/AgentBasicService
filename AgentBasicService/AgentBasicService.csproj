@@ -8,8 +8,8 @@
     </PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.Agents.AI.Hosting" Version="1.0.0-preview.260127.1" />
-		<PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.0.0-preview.260127.1" />
+		<PackageReference Include="Microsoft.Agents.AI.Hosting" Version="1.0.0-preview.260128.1" />
+		<PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.0.0-preview.260128.1" />
 		<PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.2" />
 		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.1.0" />
 		<PackageReference Include="TinyHelpers.AspNetCore" Version="4.1.15" />
