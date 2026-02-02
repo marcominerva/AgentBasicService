@@ -35,11 +35,14 @@ builder.Services.AddAIAgent("Default", (services, key) =>
         {
             Instructions = "You are a helpful assistant that provides concise and accurate information."
         },
+        //AIContextProviderFactory = (_, _) => ValueTask.FromResult<AIContextProvider>(new RagProvider()),
         ChatHistoryProviderFactory = (context, cancellationToken) =>
         {
             //var reducer = new MessageCountingChatReducer(4);
             var reducer = new SummarizingChatReducer(chatClient, 1, 4);
-            var store = new InMemoryChatHistoryProvider(reducer, context.SerializedState, context.JsonSerializerOptions, ChatReducerTriggerEvent.AfterMessageAdded);
+            var store = new InMemoryChatHistoryProvider(reducer, context.SerializedState, context.JsonSerializerOptions, ChatReducerTriggerEvent.AfterMessageAdded)
+                //.WithAIContextProviderMessageRemoval()
+                ;
 
             return ValueTask.FromResult<ChatHistoryProvider>(store);
         }
@@ -162,4 +165,30 @@ public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAcce
 
     private static string GetKey(string conversationId, string agentId)
         => $"{agentId}:{conversationId}";
+}
+
+public class RagProvider : AIContextProvider
+{
+    public override ValueTask<AIContext> InvokingAsync(InvokingContext context, CancellationToken cancellationToken = default)
+    {
+        // Get relevant information from a knowledge base or other source. Here we hardcode it for simplicity.
+
+        //var input = new ChatMessage(ChatRole.User, $"""
+        //    Conosci solo queste informazioni:
+        //    ---
+        //    Il centro storico di Taggia è situato nell'immediato entroterra della valle Argentina, mentre l'abitato di Arma è una località balneare. Tra i due centri vi è la zona denominata Levà (il toponimo deriva dalla denominazione romana per indicare un'area rialzata).
+        //    Il territorio comunale è tuttavia molto esteso, perché coincide con la bassa valle del torrente Argentina, dalla confluenza del torrente Oxentina, presso la località San Giorgio, fino al mare. Si tratta di un ampio settore di entroterra caratterizzato da estese colture - soprattutto oliveti - nella fascia collinare e da estesi boschi nella sua porzione montana, che raggiunge il monte Faudo, massima elevazione del comune con i suoi 1149 metri.
+        //    Altre vette del territorio il monte Follia (1031 m), il monte Neveia (835 m), il monte Santa Maria (462 m), il monte Giamanassa (405 m).
+        //    """);
+
+        //return ValueTask.FromResult(new AIContext
+        //{
+        //    Messages = [input]
+        //});
+
+        return ValueTask.FromResult(new AIContext
+        {
+            Messages = [new(ChatRole.User, "My name is Marco"), new(ChatRole.User, $"Today is {DateTime.Now}")]
+        });
+    }
 }
