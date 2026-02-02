@@ -24,8 +24,6 @@ builder.Services.AddChatClient(_ =>
     return openAIClient.GetChatClient(openAISettings.Deployment).AsIChatClient();
 });
 
-builder.Services.AddSingleton<CustomAgentSessionStore>();
-
 builder.Services.AddAIAgent("Default", (services, key) =>
 {
     var chatClient = services.GetRequiredService<IChatClient>();
@@ -51,7 +49,9 @@ builder.Services.AddAIAgent("Default", (services, key) =>
 })
 .WithSessionStore((services, key) =>
 {
-    var agentSessionStore = services.GetRequiredService<CustomAgentSessionStore>();
+    var httpContextAccessor = services.GetRequiredService<IHttpContextAccessor>();
+    var agentSessionStore = new CustomAgentSessionStore(httpContextAccessor);
+
     return agentSessionStore;
 });
 
