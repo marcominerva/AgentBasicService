@@ -8,7 +8,6 @@ using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using TinyHelpers.AspNetCore.Extensions;
-using static Microsoft.Agents.AI.InMemoryChatHistoryProvider;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true);
@@ -35,12 +34,12 @@ builder.Services.AddAIAgent("Default", (services, key) =>
         {
             Instructions = "You are a helpful assistant that provides concise and accurate information."
         },
-        //AIContextProviderFactory = (_, _) => ValueTask.FromResult<AIContextProvider>(new RagProvider()),
+        AIContextProviderFactory = (context, cancellationToken) => ValueTask.FromResult<AIContextProvider>(new RagProvider()),
         ChatHistoryProviderFactory = (context, cancellationToken) =>
         {
             //var reducer = new MessageCountingChatReducer(4);
             var reducer = new SummarizingChatReducer(chatClient, 1, 4);
-            var store = new InMemoryChatHistoryProvider(reducer, context.SerializedState, context.JsonSerializerOptions, ChatReducerTriggerEvent.AfterMessageAdded)
+            var store = new InMemoryChatHistoryProvider(reducer, context.SerializedState, context.JsonSerializerOptions, InMemoryChatHistoryProvider.ChatReducerTriggerEvent.AfterMessageAdded)
                 //.WithAIContextProviderMessageRemoval()
                 ;
 
@@ -96,14 +95,14 @@ app.UseSwaggerUI(options =>
     options.SwaggerEndpoint("/openapi/v1.json", app.Environment.ApplicationName);
 });
 
-app.MapPost("/api/chat", async (ChatRequest request, AIAgent agent, AgentSessionStore sessionStore) =>
+app.MapPost("/api/chat", async (ChatRequest request, AIAgent agent, AgentSessionStore store) =>
 {
     var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
-    var session = await sessionStore.GetSessionAsync(agent, conversationId);
+    var session = await store.GetSessionAsync(agent, conversationId);
 
     var response = await agent.RunAsync(request.Message, session);
 
-    await sessionStore.SaveSessionAsync(agent, conversationId, session);
+    await store.SaveSessionAsync(agent, conversationId, session);
 
     // If you want to return structured output, uncomment the following code:
     // Also, you need to add the appropriate Description attributes to the ChatResponse record.
@@ -147,7 +146,7 @@ public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAcce
     public override ValueTask SaveSessionAsync(AIAgent agent, string conversationId, AgentSession session, CancellationToken cancellationToken = default)
     {
         var key = GetKey(conversationId, agent.Id);
-        sessions[key] = session.Serialize();
+        sessions[key] = agent.SerializeSession(session);
         return default;
     }
 
@@ -158,8 +157,8 @@ public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAcce
 
         return threadContent switch
         {
-            null => await agent.GetNewSessionAsync(cancellationToken),
-            _ => await agent.DeserializeSessionAsync(threadContent.Value, cancellationToken: cancellationToken),
+            null => await agent.CreateSessionAsync(cancellationToken),
+            _ => await agent.DeserializeSessionAsync(threadContent.Value),
         };
     }
 
@@ -169,7 +168,7 @@ public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAcce
 
 public class RagProvider : AIContextProvider
 {
-    public override ValueTask<AIContext> InvokingAsync(InvokingContext context, CancellationToken cancellationToken = default)
+    protected override ValueTask<AIContext> InvokingCoreAsync(InvokingContext context, CancellationToken cancellationToken = default)
     {
         // Get relevant information from a knowledge base or other source. Here we hardcode it for simplicity.
 
