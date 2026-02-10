@@ -8,6 +8,7 @@ using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using TinyHelpers.AspNetCore.Extensions;
+using static Microsoft.Agents.AI.InMemoryChatHistoryProvider;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true);
@@ -35,11 +36,13 @@ builder.Services.AddAIAgent("Default", (services, key) =>
             Instructions = "You are a helpful assistant that provides concise and accurate information."
         },
         AIContextProviderFactory = (context, cancellationToken) => ValueTask.FromResult<AIContextProvider>(new RagProvider()),
-        ChatHistoryProviderFactory = (context, cancellationToke) =>
+        ChatHistoryProviderFactory = (context, cancellationToken) =>
         {
             //var reducer = new MessageCountingChatReducer(4);
             var reducer = new SummarizingChatReducer(chatClient, 1, 4);
-            var store = new InMemoryChatHistoryProvider(reducer, context.SerializedState, context.JsonSerializerOptions, InMemoryChatHistoryProvider.ChatReducerTriggerEvent.AfterMessageAdded);
+            var store = new InMemoryChatHistoryProvider(reducer, context.SerializedState, context.JsonSerializerOptions, InMemoryChatHistoryProvider.ChatReducerTriggerEvent.AfterMessageAdded)
+                //.WithAIContextProviderMessageRemoval()
+                ;
 
             return ValueTask.FromResult<ChatHistoryProvider>(store);
         }
@@ -96,9 +99,9 @@ app.UseSwaggerUI(options =>
 app.MapPost("/api/chat", async (ChatRequest request, AIAgent agent, AgentSessionStore store) =>
 {
     var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
-    var thread = await store.GetSessionAsync(agent, conversationId);
+    var session = await store.GetSessionAsync(agent, conversationId);
 
-    var response = await agent.RunAsync(request.Message, thread);
+    var response = await agent.RunAsync(request.Message, session);
 
     await store.SaveSessionAsync(agent, conversationId, thread);
 
@@ -139,19 +142,19 @@ public record class ChatResponse(string ConversationId, string Response);
 
 public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAccessor) : AgentSessionStore
 {
-    private readonly ConcurrentDictionary<string, JsonElement> threads = new();
+    private readonly ConcurrentDictionary<string, JsonElement> sessions = new();
 
     public override ValueTask SaveSessionAsync(AIAgent agent, string conversationId, AgentSession session, CancellationToken cancellationToken = default)
     {
         var key = GetKey(conversationId, agent.Id);
-        threads[key] = agent.SerializeSession(session);
+        sessions[key] = session.Serialize();
         return default;
     }
 
     public override async ValueTask<AgentSession> GetSessionAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
     {
         var key = GetKey(conversationId, agent.Id);
-        JsonElement? threadContent = threads.TryGetValue(key, out var existingThread) ? existingThread : null;
+        JsonElement? threadContent = sessions.TryGetValue(key, out var existingThread) ? existingThread : null;
 
         return threadContent switch
         {
