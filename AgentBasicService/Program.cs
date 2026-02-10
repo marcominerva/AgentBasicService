@@ -23,45 +23,48 @@ builder.Services.AddChatClient(_ =>
     return openAIClient.GetChatClient(openAISettings.Deployment).AsIChatClient();
 });
 
-builder.Services.AddSingleton<CustomAgentThreadStore>();
-
 builder.Services.AddAIAgent("Default", (services, key) =>
 {
     var chatClient = services.GetRequiredService<IChatClient>();
 
-    return chatClient.CreateAIAgent(new()
+    return chatClient.AsAIAgent(new()
     {
         Name = key,
         ChatOptions = new()
         {
             Instructions = "You are a helpful assistant that provides concise and accurate information."
         },
-        ChatMessageStoreFactory = context =>
+        AIContextProviderFactory = (context, cancellationToken) => ValueTask.FromResult<AIContextProvider>(new RagProvider()),
+        ChatHistoryProviderFactory = (context, cancellationToke) =>
         {
             //var reducer = new MessageCountingChatReducer(4);
             var reducer = new SummarizingChatReducer(chatClient, 1, 4);
-            return new InMemoryChatMessageStore(reducer, context.SerializedState, context.JsonSerializerOptions, InMemoryChatMessageStore.ChatReducerTriggerEvent.AfterMessageAdded);
+            var store = new InMemoryChatHistoryProvider(reducer, context.SerializedState, context.JsonSerializerOptions, InMemoryChatHistoryProvider.ChatReducerTriggerEvent.AfterMessageAdded);
+
+            return ValueTask.FromResult<ChatHistoryProvider>(store);
         }
     },
     loggerFactory: services.GetRequiredService<ILoggerFactory>(),
     services: services);
 })
-.WithThreadStore((services, key) =>
+.WithSessionStore((services, key) =>
 {
-    var agentThreadStore = services.GetRequiredService<CustomAgentThreadStore>();
-    return agentThreadStore;
+    var httpContextAccessor = services.GetRequiredService<IHttpContextAccessor>();
+    var agentSessionStore = new CustomAgentSessionStore(httpContextAccessor);
+
+    return agentSessionStore;
 });
 
 builder.Services.AddAIAgent("Translator", (services, key) =>
 {
     var chatClient = services.GetRequiredService<IChatClient>();
 
-    var answerer = chatClient.CreateAIAgent(name: "Answerer",
+    var answerer = chatClient.AsAIAgent(name: "Answerer",
         instructions: "You are a helpful assistant.",
         loggerFactory: services.GetRequiredService<ILoggerFactory>(),
         services: services);
 
-    var responseTranslator = chatClient.CreateAIAgent(name: "ResponseTranslator",
+    var responseTranslator = chatClient.AsAIAgent(name: "ResponseTranslator",
         instructions: """
             You are a translator. You will receive a response that may be in any language.
             Your job is to translate it to English.
@@ -75,7 +78,7 @@ builder.Services.AddAIAgent("Translator", (services, key) =>
 });
 
 builder.Services.AddSingleton(services => services.GetRequiredKeyedService<AIAgent>("Default"));
-builder.Services.AddSingleton(services => services.GetRequiredKeyedService<AgentThreadStore>("Default"));
+builder.Services.AddSingleton(services => services.GetRequiredKeyedService<AgentSessionStore>("Default"));
 
 builder.Services.AddOpenApi();
 
@@ -90,14 +93,14 @@ app.UseSwaggerUI(options =>
     options.SwaggerEndpoint("/openapi/v1.json", app.Environment.ApplicationName);
 });
 
-app.MapPost("/api/chat", async (ChatRequest request, AIAgent agent, AgentThreadStore agentThreadStore) =>
+app.MapPost("/api/chat", async (ChatRequest request, AIAgent agent, AgentSessionStore store) =>
 {
     var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
-    var thread = await agentThreadStore.GetThreadAsync(agent, conversationId);
+    var thread = await store.GetSessionAsync(agent, conversationId);
 
     var response = await agent.RunAsync(request.Message, thread);
 
-    await agentThreadStore.SaveThreadAsync(agent, conversationId, thread);
+    await store.SaveSessionAsync(agent, conversationId, thread);
 
     // If you want to return structured output, uncomment the following code:
     // Also, you need to add the appropriate Description attributes to the ChatResponse record.
@@ -134,29 +137,55 @@ public record class ChatRequest(string? ConversationId, string Message);
 
 public record class ChatResponse(string ConversationId, string Response);
 
-public sealed class CustomAgentThreadStore(IHttpContextAccessor httpContextAccessor) : AgentThreadStore
+public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAccessor) : AgentSessionStore
 {
     private readonly ConcurrentDictionary<string, JsonElement> threads = new();
 
-    public override ValueTask SaveThreadAsync(AIAgent agent, string conversationId, AgentThread thread, CancellationToken cancellationToken = default)
+    public override ValueTask SaveSessionAsync(AIAgent agent, string conversationId, AgentSession session, CancellationToken cancellationToken = default)
     {
         var key = GetKey(conversationId, agent.Id);
-        threads[key] = thread.Serialize();
+        threads[key] = agent.SerializeSession(session);
         return default;
     }
 
-    public override ValueTask<AgentThread> GetThreadAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
+    public override async ValueTask<AgentSession> GetSessionAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
     {
         var key = GetKey(conversationId, agent.Id);
         JsonElement? threadContent = threads.TryGetValue(key, out var existingThread) ? existingThread : null;
 
         return threadContent switch
         {
-            null => new ValueTask<AgentThread>(agent.GetNewThread()),
-            _ => new ValueTask<AgentThread>(agent.DeserializeThread(threadContent.Value)),
+            null => await agent.CreateSessionAsync(cancellationToken),
+            _ => await agent.DeserializeSessionAsync(threadContent.Value),
         };
     }
 
     private static string GetKey(string conversationId, string agentId)
         => $"{agentId}:{conversationId}";
+}
+
+public class RagProvider : AIContextProvider
+{
+    public override ValueTask<AIContext> InvokingAsync(InvokingContext context, CancellationToken cancellationToken = default)
+    {
+        // Get relevant information from a knowledge base or other source. Here we hardcode it for simplicity.
+
+        //var input = new ChatMessage(ChatRole.User, $"""
+        //    Conosci solo queste informazioni:
+        //    ---
+        //    Il centro storico di Taggia è situato nell'immediato entroterra della valle Argentina, mentre l'abitato di Arma è una località balneare. Tra i due centri vi è la zona denominata Levà (il toponimo deriva dalla denominazione romana per indicare un'area rialzata).
+        //    Il territorio comunale è tuttavia molto esteso, perché coincide con la bassa valle del torrente Argentina, dalla confluenza del torrente Oxentina, presso la località San Giorgio, fino al mare. Si tratta di un ampio settore di entroterra caratterizzato da estese colture - soprattutto oliveti - nella fascia collinare e da estesi boschi nella sua porzione montana, che raggiunge il monte Faudo, massima elevazione del comune con i suoi 1149 metri.
+        //    Altre vette del territorio il monte Follia (1031 m), il monte Neveia (835 m), il monte Santa Maria (462 m), il monte Giamanassa (405 m).
+        //    """);
+
+        //return ValueTask.FromResult(new AIContext
+        //{
+        //    Messages = [input]
+        //});
+
+        return ValueTask.FromResult(new AIContext
+        {
+            Messages = [new(ChatRole.User, "My name is Marco"), new(ChatRole.User, $"Today is {DateTime.Now}")]
+        });
+    }
 }
