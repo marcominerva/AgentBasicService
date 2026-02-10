@@ -8,7 +8,6 @@ using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using TinyHelpers.AspNetCore.Extensions;
-using static Microsoft.Agents.AI.InMemoryChatHistoryProvider;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true);
@@ -103,7 +102,7 @@ app.MapPost("/api/chat", async (ChatRequest request, AIAgent agent, AgentSession
 
     var response = await agent.RunAsync(request.Message, session);
 
-    await store.SaveSessionAsync(agent, conversationId, thread);
+    await store.SaveSessionAsync(agent, conversationId, session);
 
     // If you want to return structured output, uncomment the following code:
     // Also, you need to add the appropriate Description attributes to the ChatResponse record.
@@ -147,7 +146,7 @@ public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAcce
     public override ValueTask SaveSessionAsync(AIAgent agent, string conversationId, AgentSession session, CancellationToken cancellationToken = default)
     {
         var key = GetKey(conversationId, agent.Id);
-        sessions[key] = session.Serialize();
+        sessions[key] = agent.SerializeSession(session);
         return default;
     }
 
@@ -169,7 +168,7 @@ public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAcce
 
 public class RagProvider : AIContextProvider
 {
-    public override ValueTask<AIContext> InvokingAsync(InvokingContext context, CancellationToken cancellationToken = default)
+    protected override ValueTask<AIContext> InvokingCoreAsync(InvokingContext context, CancellationToken cancellationToken = default)
     {
         // Get relevant information from a knowledge base or other source. Here we hardcode it for simplicity.
 
