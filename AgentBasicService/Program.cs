@@ -37,8 +37,8 @@ builder.Services.AddAIAgent("Default", (services, key) =>
         AIContextProviderFactory = (context, cancellationToken) => ValueTask.FromResult<AIContextProvider>(new RagProvider()),
         ChatHistoryProviderFactory = (context, cancellationToken) =>
         {
-            //var reducer = new MessageCountingChatReducer(4);
-            var reducer = new SummarizingChatReducer(chatClient, 1, 4);
+            //var reducer = new MessageCountingChatReducer(10);
+            var reducer = new SummarizingChatReducer(chatClient, 1, 10);
             var store = new InMemoryChatHistoryProvider(reducer, context.SerializedState, context.JsonSerializerOptions, InMemoryChatHistoryProvider.ChatReducerTriggerEvent.AfterMessageAdded)
                 //.WithAIContextProviderMessageRemoval()
                 ;
@@ -158,7 +158,7 @@ public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAcce
         return threadContent switch
         {
             null => await agent.CreateSessionAsync(cancellationToken),
-            _ => await agent.DeserializeSessionAsync(threadContent.Value),
+            _ => await agent.DeserializeSessionAsync(threadContent.Value, cancellationToken: cancellationToken),
         };
     }
 
