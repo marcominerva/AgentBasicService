@@ -1,15 +1,15 @@
 # Agent Basic Service
 
-An example to demonstrate configuration and usage of a basic agent from Microsoft Agent Framework in an ASP.NET Core Minimal API application, supporting thread persistence and structured output with Azure OpenAI.
+Examples to demonstrate configuration and usage of basic agents and workflows from Microsoft Agent Framework, supporting thread persistence and structured output.
 
-## Configuration
+## Configuration of the Web API
 
 To configure Azure OpenAI, update the following properties in the `appsettings.json` file:
 
 ```json
 {
   "AzureOpenAI": {
-    "Endpoint": "https://your-resource-name.openai.azure.com/",
+    "Endpoint": "https://your-resource-name.openai.azure.com/openai/v1/",
     "Deployment": "your-deployment-name",
     "ApiKey": "your-api-key"
   }
