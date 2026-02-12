@@ -40,6 +40,13 @@ builder.Services.AddAIAgent("Default", (services, key) =>
             //var reducer = new MessageCountingChatReducer(10);
             var reducer = new SummarizingChatReducer(chatClient, 1, 10);
             var store = new InMemoryChatHistoryProvider(reducer, context.SerializedState, context.JsonSerializerOptions, InMemoryChatHistoryProvider.ChatReducerTriggerEvent.AfterMessageAdded)
+                //.WithMessageFilters(invokedMessagesFilter: context =>
+                //{
+                //    context.RequestMessages = context.RequestMessages
+                //        .Where(x => !(x.AdditionalProperties?.TryGetValue("IsRagProviderOutput", out bool value) is true && value is true));
+
+                //    return context;
+                //})
                 //.WithAIContextProviderMessageRemoval()
                 ;
 
