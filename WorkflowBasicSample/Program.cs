@@ -16,8 +16,6 @@ using Microsoft.Extensions.Logging;
 using OpenAI;
 using OpenAI.Audio;
 using WorkflowBasicSample;
-using static SummarizeExecutor;
-using static TranslationExecutor;
 
 var builder = Host.CreateApplicationBuilder(args);
 
