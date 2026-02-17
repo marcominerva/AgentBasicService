@@ -150,11 +150,10 @@ public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAcce
 {
     private readonly ConcurrentDictionary<string, JsonElement> sessions = new();
 
-    public override ValueTask SaveSessionAsync(AIAgent agent, string conversationId, AgentSession session, CancellationToken cancellationToken = default)
+    public override async ValueTask SaveSessionAsync(AIAgent agent, string conversationId, AgentSession session, CancellationToken cancellationToken = default)
     {
         var key = GetKey(conversationId, agent.Id);
-        sessions[key] = agent.SerializeSession(session);
-        return default;
+        sessions[key] = await agent.SerializeSessionAsync(session, cancellationToken: cancellationToken);
     }
 
     public override async ValueTask<AgentSession> GetSessionAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
