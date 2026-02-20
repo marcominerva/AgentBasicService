@@ -27,6 +27,28 @@ builder.Services.AddAIAgent("Default", (services, key) =>
 {
     var chatClient = services.GetRequiredService<IChatClient>();
 
+    var chatHistoryProvider = new InMemoryChatHistoryProvider(new()
+    {
+        ChatReducer = new MessageCountingChatReducer(10), //new SummarizingChatReducer(chatClient, 1, 10)
+        ReducerTriggerEvent = InMemoryChatHistoryProviderOptions.ChatReducerTriggerEvent.AfterMessageAdded,
+        //ProvideOutputMessageFilter = messages =>
+        //{
+        //    // This method is called BEFORE actually sends the messages to the LLM, so we can filter out messages that we don't want the LLM to use.
+        //    return messages.Where(m => m.GetAgentRequestMessageSourceType() != AgentRequestMessageSourceType.AIContextProvider
+        //        && m.GetAgentRequestMessageSourceType() != AgentRequestMessageSourceType.ChatHistory);
+        //},
+        StorageInputMessageFilter = messages =>
+        {
+            // This methosd is called AFTER the response is received from the LLM, but before storing the messages in the chat history,
+            // so we can filter out messages that we don't want to store.
+            // For example, we can filter out messages from the AIContextProvider, as they can be re-generated if needed.
+            // By default the chat history provider will store all messages, except for those that came from chat history in the first place.
+            // We also want to maintain that exclusion here.
+            return messages.Where(m => m.GetAgentRequestMessageSourceType() != AgentRequestMessageSourceType.AIContextProvider
+              && m.GetAgentRequestMessageSourceType() != AgentRequestMessageSourceType.ChatHistory);
+        }
+    });
+
     return chatClient.AsAIAgent(new()
     {
         Name = key,
@@ -34,24 +56,8 @@ builder.Services.AddAIAgent("Default", (services, key) =>
         {
             Instructions = "You are a helpful assistant that provides concise and accurate information."
         },
-        AIContextProviderFactory = (context, cancellationToken) => ValueTask.FromResult<AIContextProvider>(new RagProvider()),
-        ChatHistoryProviderFactory = (context, cancellationToken) =>
-        {
-            //var reducer = new MessageCountingChatReducer(10);
-            var reducer = new SummarizingChatReducer(chatClient, 1, 10);
-            var store = new InMemoryChatHistoryProvider(reducer, context.SerializedState, context.JsonSerializerOptions, InMemoryChatHistoryProvider.ChatReducerTriggerEvent.AfterMessageAdded)
-                //.WithMessageFilters(invokedMessagesFilter: context =>
-                //{
-                //    context.RequestMessages = context.RequestMessages
-                //        .Where(x => !(x.AdditionalProperties?.TryGetValue("IsRagProviderOutput", out bool value) is true && value is true));
-
-                //    return context;
-                //})
-                //.WithAIContextProviderMessageRemoval()
-                ;
-
-            return ValueTask.FromResult<ChatHistoryProvider>(store);
-        }
+        AIContextProviders = [new RagProvider()],
+        ChatHistoryProvider = chatHistoryProvider
     },
     loggerFactory: services.GetRequiredService<ILoggerFactory>(),
     services: services);
@@ -83,7 +89,7 @@ builder.Services.AddAIAgent("Translator", (services, key) =>
         loggerFactory: services.GetRequiredService<ILoggerFactory>(),
         services: services);
 
-    return AgentWorkflowBuilder.BuildSequential([answerer, responseTranslator]).AsAgent(name: key);
+    return AgentWorkflowBuilder.BuildSequential([answerer, responseTranslator]).AsAIAgent(name: key);
 });
 
 builder.Services.AddSingleton(services => services.GetRequiredKeyedService<AIAgent>("Default"));
@@ -172,9 +178,9 @@ public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAcce
         => $"{agentId}:{conversationId}";
 }
 
-public class RagProvider : AIContextProvider
+public class RagProvider : MessageAIContextProvider
 {
-    protected override ValueTask<AIContext> InvokingCoreAsync(InvokingContext context, CancellationToken cancellationToken = default)
+    protected override ValueTask<IEnumerable<ChatMessage>> ProvideMessagesAsync(InvokingContext context, CancellationToken cancellationToken = default)
     {
         // Get relevant information from a knowledge base or other source. Here we hardcode it for simplicity.
 
@@ -186,14 +192,10 @@ public class RagProvider : AIContextProvider
         //    Altre vette del territorio il monte Follia (1031 m), il monte Neveia (835 m), il monte Santa Maria (462 m), il monte Giamanassa (405 m).
         //    """);
 
-        //return ValueTask.FromResult(new AIContext
-        //{
-        //    Messages = [input]
-        //});
+        //return ValueTask.FromResult<IEnumerable<ChatMessage>>([input]);
 
-        return ValueTask.FromResult(new AIContext
-        {
-            Messages = [new(ChatRole.User, "My name is Marco"), new(ChatRole.User, $"Today is {DateTime.Now}")]
-        });
+        return ValueTask.FromResult<IEnumerable<ChatMessage>>(
+            [new(ChatRole.User, "My name is Marco"), new(ChatRole.User, $"Today is {DateTime.Now}")]
+        );
     }
 }
