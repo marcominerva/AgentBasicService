@@ -29,7 +29,7 @@ builder.Services.AddAIAgent("Default", (services, key) =>
 
     var chatHistoryProvider = new InMemoryChatHistoryProvider(new()
     {
-        ChatReducer = new MessageCountingChatReducer(10), //new SummarizingChatReducer(chatClient, 1, 10)
+        ChatReducer = new MessageCountingChatReducer(20), //new SummarizingChatReducer(chatClient, 1, 10)
         ReducerTriggerEvent = InMemoryChatHistoryProviderOptions.ChatReducerTriggerEvent.AfterMessageAdded,
         //ProvideOutputMessageFilter = messages =>
         //{
@@ -39,8 +39,10 @@ builder.Services.AddAIAgent("Default", (services, key) =>
         //},
         StorageInputMessageFilter = messages =>
         {
-            // This methosd is called AFTER the response is received from the LLM, but before storing the messages in the chat history,
-            // so we can filter out messages that we don't want to store.
+            // The messages list contains the request messages of the current turn, but it does not contain the response messages yet,
+            // as we are still in the process of handling the request.
+            // This method is called AFTER the response is received from the LLM, but before storing the reponse messages in the chat history,
+            // so we can filter out request messages that we don't want to store.
             // For example, we can filter out messages from the AIContextProvider, as they can be re-generated if needed.
             // By default the chat history provider will store all messages, except for those that came from chat history in the first place.
             // We also want to maintain that exclusion here.
@@ -116,25 +118,6 @@ app.MapPost("/api/chat", async (ChatRequest request, AIAgent agent, AgentSession
     var response = await agent.RunAsync(request.Message, session);
 
     await store.SaveSessionAsync(agent, conversationId, session);
-
-    // If you want to return structured output, uncomment the following code:
-    // Also, you need to add the appropriate Description attributes to the ChatResponse record.
-    //var jsonSerializerOptions = new JsonSerializerOptions
-    //{
-    //    PropertyNameCaseInsensitive = true,
-    //    TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
-    //    Converters = { new JsonStringEnumConverter() }
-    //};
-
-    //var structuredOutput = await agent.RunAsync(request.Message, options: new ChatClientAgentRunOptions
-    //{
-    //    ChatOptions = new()
-    //    {
-    //        ResponseFormat = ChatResponseFormat.ForJsonSchema<ChatResponse>(jsonSerializerOptions)
-    //    }
-    //});
-
-    //var result = structuredOutput.Deserialize<ChatResponse>(jsonSerializerOptions);
 
     return TypedResults.Ok(new ChatResponse(conversationId, response.Text));
 });
