@@ -25,6 +25,7 @@ builder.Services.AddChatClient(_ =>
 
 builder.Services.AddAIAgent("Default", (services, key) =>
 {
+    var httpContextAccessor = services.GetRequiredService<IHttpContextAccessor>();
     var chatClient = services.GetRequiredService<IChatClient>();
 
     var chatHistoryProvider = new InMemoryChatHistoryProvider(new()
@@ -58,7 +59,7 @@ builder.Services.AddAIAgent("Default", (services, key) =>
         {
             Instructions = "You are a helpful assistant that provides concise and accurate information."
         },
-        AIContextProviders = [new RagProvider()],
+        AIContextProviders = [new RagProvider(httpContextAccessor)],
         ChatHistoryProvider = chatHistoryProvider
     },
     loggerFactory: services.GetRequiredService<ILoggerFactory>(),
@@ -122,11 +123,11 @@ app.MapPost("/api/chat", async (ChatRequest request, AIAgent agent, AgentSession
     return TypedResults.Ok(new ChatResponse(conversationId, response.Text));
 });
 
-app.MapPost("/api/translator", async (ChatRequest request, [FromKeyedServices("Translator")] AIAgent agent) =>
+app.MapPost("/api/translator", async (Translation request, [FromKeyedServices("Translator")] AIAgent agent) =>
 {
     // For the sake of simplicity, we are not maintaining conversation threads in this endpoint.
     var response = await agent.RunAsync(request.Message);
-    return TypedResults.Ok(new ChatResponse(string.Empty, response.Messages.LastOrDefault()?.Text!));
+    return TypedResults.Ok(new Translation(response.Messages.LastOrDefault()?.Text!));
 });
 
 app.Run();
@@ -134,6 +135,8 @@ app.Run();
 public record class ChatRequest(string? ConversationId, string Message);
 
 public record class ChatResponse(string ConversationId, string Response);
+
+public record class Translation(string Message);
 
 public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAccessor) : AgentSessionStore
 {
@@ -161,7 +164,7 @@ public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAcce
         => $"{agentId}:{conversationId}";
 }
 
-public class RagProvider : MessageAIContextProvider
+public class RagProvider(IHttpContextAccessor httpContextAccessor) : MessageAIContextProvider
 {
     protected override ValueTask<IEnumerable<ChatMessage>> ProvideMessagesAsync(InvokingContext context, CancellationToken cancellationToken = default)
     {
