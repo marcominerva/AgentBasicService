@@ -100,8 +100,8 @@ var logger = app.Services.GetRequiredService<ILogger<Program>>();
 
 try
 {
-    using var input = File.OpenRead(@"D:\Audio.mp3");
-    await using var run = await InProcessExecution.StreamAsync(workflow, input);
+    using var input = File.OpenRead(@"D:\Audio5.mp3");
+    await using var run = await InProcessExecution.RunStreamingAsync(workflow, input);
 
     await foreach (var @event in run.WatchStreamAsync())
     {
@@ -146,14 +146,15 @@ catch (Exception ex)
     logger.LogError(ex, "An error occurred during workflow execution.");
 }
 
-public class TranscribeExecutor(AudioClient audioClient, ILogger<TranscribeExecutor> logger) : Executor<FileStream, TranscriptionResult>(nameof(TranscribeExecutor))
+public partial class TranscribeExecutor(AudioClient audioClient, ILogger<TranscribeExecutor> logger) : Executor(nameof(TranscribeExecutor))
 {
-    public override async ValueTask<TranscriptionResult> HandleAsync(FileStream message, IWorkflowContext context, CancellationToken cancellationToken = default)
+    [MessageHandler]
+    private async ValueTask<TranscriptionResult> HandleAsync(Stream message, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Starting transcription...");
 
         if (message.CanSeek)
-        { 
+        {
             message.Position = 0;
         }
 
@@ -173,9 +174,10 @@ public class TranscribeExecutor(AudioClient audioClient, ILogger<TranscribeExecu
     }
 }
 
-public class TranslationExecutor(AIAgent agent, ILogger<TranslationExecutor> logger) : Executor<TranscriptionResult, TranscriptionResult>(nameof(TranslationExecutor))
+public partial class TranslationExecutor(AIAgent agent, ILogger<TranslationExecutor> logger) : Executor(nameof(TranslationExecutor))
 {
-    public override async ValueTask<TranscriptionResult> HandleAsync(TranscriptionResult message, IWorkflowContext context, CancellationToken cancellationToken = default)
+    [MessageHandler]
+    private async ValueTask<TranscriptionResult> HandleAsync(TranscriptionResult message, IWorkflowContext context, CancellationToken cancellationToken)
     {
         logger.LogInformation("Translating text from {Language} to Italian...", new CultureInfo(message.Language).EnglishName);
 
@@ -186,9 +188,12 @@ public class TranslationExecutor(AIAgent agent, ILogger<TranslationExecutor> log
     }
 }
 
-class SummarizeExecutor(AIAgent agent, ILogger<SummarizeExecutor> logger) : Executor<TranscriptionResult>(nameof(TranscriptionResult))
+public partial class SummarizeExecutor(AIAgent agent, ILogger<SummarizeExecutor> logger) : Executor(nameof(SummarizeExecutor))
 {
-    public override async ValueTask HandleAsync(TranscriptionResult message, IWorkflowContext context, CancellationToken cancellationToken = default)
+    [MessageHandler]
+    //[YieldsOutput(typeof(AgentResponseUpdate))]
+    //[SendsMessage(typeof(string))]
+    private async ValueTask<string> HandleAsync(TranscriptionResult message, IWorkflowContext context, CancellationToken cancellationToken)
     {
         logger.LogInformation("Starting summarization...");
 
@@ -201,13 +206,14 @@ class SummarizeExecutor(AIAgent agent, ILogger<SummarizeExecutor> logger) : Exec
             await context.YieldOutputAsync(update, cancellationToken);
         }
 
-        await context.SendMessageAsync(content.ToString(), cancellationToken);
+        return content.ToString();
     }
 }
 
-public class CreateDocumentExecutor(ILogger<CreateDocumentExecutor> logger) : Executor<string, Stream>(nameof(CreateDocumentExecutor))
+public partial class CreateDocumentExecutor(ILogger<CreateDocumentExecutor> logger) : Executor(nameof(CreateDocumentExecutor))
 {
-    public override ValueTask<Stream> HandleAsync(string message, IWorkflowContext context, CancellationToken cancellationToken = default)
+    [MessageHandler]
+    private ValueTask<Stream> HandleAsync(string message, IWorkflowContext context, CancellationToken cancellationToken)
     {
         logger.LogInformation("Creating document from summarized text...");
 
@@ -228,7 +234,7 @@ public class CreateDocumentExecutor(ILogger<CreateDocumentExecutor> logger) : Ex
 
         logger.LogInformation("Document creation completed.");
 
-        return ValueTask.FromResult<Stream>(stream);
+        return ValueTask.FromResult(stream as Stream);
     }
 }
 
