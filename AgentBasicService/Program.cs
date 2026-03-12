@@ -38,7 +38,7 @@ builder.Services.AddAIAgent("Default", (services, key) =>
         //    return messages.Where(m => m.GetAgentRequestMessageSourceType() != AgentRequestMessageSourceType.AIContextProvider
         //        && m.GetAgentRequestMessageSourceType() != AgentRequestMessageSourceType.ChatHistory);
         //},
-        StorageInputMessageFilter = messages =>
+        StorageInputRequestMessageFilter = messages =>
         {
             // The messages list contains the request messages of the current turn, but it does not contain the response messages yet,
             // as we are still in the process of handling the request.
