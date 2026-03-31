@@ -47,8 +47,8 @@ builder.Services.AddAIAgent("Default", (services, key) =>
             // For example, we can filter out messages from the AI Context Providers, as they can be re-generated if needed.
             // By default the chat history provider will store all messages, except for those that came from chat history in the first place.
             // We also want to maintain that exclusion here.
-            return messages.Where(m => m.GetAgentRequestMessageSourceType() != AgentRequestMessageSourceType.AIContextProvider
-              && m.GetAgentRequestMessageSourceType() != AgentRequestMessageSourceType.ChatHistory);
+            return messages.Where(m => m.GetAgentRequestMessageSourceType() != AgentRequestMessageSourceType.ChatHistory
+                && m.GetAgentRequestMessageSourceType() != AgentRequestMessageSourceType.AIContextProvider);
         }
     });
 
@@ -142,22 +142,22 @@ public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAcce
 {
     private readonly ConcurrentDictionary<string, JsonElement> sessions = new();
 
+    public override async ValueTask<AgentSession> GetSessionAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
+    {
+        var key = GetKey(conversationId, agent.Id);
+        JsonElement? sessionContent = sessions.TryGetValue(key, out var existingSession) ? existingSession : null;
+
+        return sessionContent switch
+        {
+            null => await agent.CreateSessionAsync(cancellationToken),
+            _ => await agent.DeserializeSessionAsync(sessionContent.Value, cancellationToken: cancellationToken),
+        };
+    }
+
     public override async ValueTask SaveSessionAsync(AIAgent agent, string conversationId, AgentSession session, CancellationToken cancellationToken = default)
     {
         var key = GetKey(conversationId, agent.Id);
         sessions[key] = await agent.SerializeSessionAsync(session, cancellationToken: cancellationToken);
-    }
-
-    public override async ValueTask<AgentSession> GetSessionAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
-    {
-        var key = GetKey(conversationId, agent.Id);
-        JsonElement? threadContent = sessions.TryGetValue(key, out var existingThread) ? existingThread : null;
-
-        return threadContent switch
-        {
-            null => await agent.CreateSessionAsync(cancellationToken),
-            _ => await agent.DeserializeSessionAsync(threadContent.Value, cancellationToken: cancellationToken),
-        };
     }
 
     private static string GetKey(string conversationId, string agentId)
