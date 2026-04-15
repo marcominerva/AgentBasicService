@@ -10,10 +10,10 @@
 	<ItemGroup>
 		<PackageReference Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
 		<PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
-		<PackageReference Include="Microsoft.Agents.AI.Hosting" Version="1.0.0-preview.260330.1" />
-		<PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.0.0-rc5" />
-		<PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.0.0-rc5" />
-		<PackageReference Include="Microsoft.Agents.AI.Workflows.Generators" Version="1.0.0-rc5">
+		<PackageReference Include="Microsoft.Agents.AI.Hosting" Version="1.1.0-preview.260410.1" />
+		<PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.1.0" />
+		<PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.1.0" />
+		<PackageReference Include="Microsoft.Agents.AI.Workflows.Generators" Version="1.1.0">
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>

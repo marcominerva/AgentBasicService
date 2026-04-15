@@ -9,10 +9,10 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.Agents.AI.Hosting" Version="1.0.0-preview.260330.1" />
-        <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.0.0-rc5" />
-        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
+        <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.1.0" />
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.6" />
         <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.1.7" />
-        <PackageReference Include="TinyHelpers.AspNetCore" Version="4.1.19" />
+        <PackageReference Include="TinyHelpers.AspNetCore" Version="4.1.21" />
     </ItemGroup>
 
 </Project>
