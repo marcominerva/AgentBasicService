@@ -127,7 +127,7 @@ app.MapPost("/api/translator", async (Translation request, [FromKeyedServices("T
 {
     // For the sake of simplicity, we are not maintaining conversation threads in this endpoint.
     var response = await agent.RunAsync(request.Message);
-    return TypedResults.Ok(new Translation(response.Messages.LastOrDefault()?.Text!));
+    return TypedResults.Ok(new Translation(response.Messages.Last().Text));
 });
 
 app.Run();
