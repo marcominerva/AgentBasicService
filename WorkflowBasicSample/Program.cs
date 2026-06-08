@@ -188,11 +188,11 @@ public partial class TranslationExecutor(AIAgent agent, ILogger<TranslationExecu
     }
 }
 
+//[YieldsOutput(typeof(AgentResponseUpdate))]
+//[SendsMessage(typeof(string))]
 public partial class SummarizeExecutor(AIAgent agent, ILogger<SummarizeExecutor> logger) : Executor(nameof(SummarizeExecutor))
 {
     [MessageHandler]
-    //[YieldsOutput(typeof(AgentResponseUpdate))]
-    //[SendsMessage(typeof(string))]
     private async ValueTask<string> HandleAsync(TranscriptionResult message, IWorkflowContext context, CancellationToken cancellationToken)
     {
         logger.LogInformation("Starting summarization...");
