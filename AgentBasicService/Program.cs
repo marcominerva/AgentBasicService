@@ -7,6 +7,7 @@ using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using OpenAI;
+using OpenAI.Responses;
 using TinyHelpers.AspNetCore.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,7 +21,7 @@ builder.Services.AddChatClient(_ =>
 {
     // Endpoint must end with /openai/v1 for Azure OpenAI
     var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new() { Endpoint = new(openAISettings.Endpoint) });
-    return openAIClient.GetChatClient(openAISettings.Deployment).AsIChatClient();
+    return openAIClient.GetResponsesClient().AsIChatClientWithStoredOutputDisabled(openAISettings.Deployment);
 });
 
 builder.Services.AddAIAgent("Default", (services, key) =>
@@ -71,7 +72,7 @@ builder.Services.AddAIAgent("Default", (services, key) =>
     var agentSessionStore = new CustomAgentSessionStore(httpContextAccessor);
 
     return agentSessionStore;
-});
+}, withIsolation: false);
 
 builder.Services.AddAIAgent("Translator", (services, key) =>
 {
@@ -95,9 +96,6 @@ builder.Services.AddAIAgent("Translator", (services, key) =>
     return AgentWorkflowBuilder.BuildSequential([answerer, responseTranslator]).AsAIAgent(name: key);
 });
 
-builder.Services.AddSingleton(services => services.GetRequiredKeyedService<AIAgent>("Default"));
-builder.Services.AddSingleton(services => services.GetRequiredKeyedService<AgentSessionStore>("Default"));
-
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -106,12 +104,12 @@ var app = builder.Build();
 app.UseHttpsRedirection();
 
 app.MapOpenApi();
-app.UseSwaggerUI(options =>
+app.MapSwaggerUI(setupAction: options =>
 {
     options.SwaggerEndpoint("/openapi/v1.json", app.Environment.ApplicationName);
 });
 
-app.MapPost("/api/chat", async (ChatRequest request, AIAgent agent, AgentSessionStore store) =>
+app.MapPost("/api/chat", async (ChatRequest request, [FromKeyedServices("Default")] AIAgent agent, [FromKeyedServices("Default")] AgentSessionStore store) =>
 {
     var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
     var session = await store.GetSessionAsync(agent, conversationId);
@@ -169,17 +167,6 @@ public class RagProvider(IHttpContextAccessor httpContextAccessor) : MessageAICo
     protected override ValueTask<IEnumerable<ChatMessage>> ProvideMessagesAsync(InvokingContext context, CancellationToken cancellationToken = default)
     {
         // Get relevant information from a knowledge base or other source. Here we hardcode it for simplicity.
-
-        //var input = new ChatMessage(ChatRole.User, $"""
-        //    Conosci solo queste informazioni:
-        //    ---
-        //    Il centro storico di Taggia è situato nell'immediato entroterra della valle Argentina, mentre l'abitato di Arma è una località balneare. Tra i due centri vi è la zona denominata Levà (il toponimo deriva dalla denominazione romana per indicare un'area rialzata).
-        //    Il territorio comunale è tuttavia molto esteso, perché coincide con la bassa valle del torrente Argentina, dalla confluenza del torrente Oxentina, presso la località San Giorgio, fino al mare. Si tratta di un ampio settore di entroterra caratterizzato da estese colture - soprattutto oliveti - nella fascia collinare e da estesi boschi nella sua porzione montana, che raggiunge il monte Faudo, massima elevazione del comune con i suoi 1149 metri.
-        //    Altre vette del territorio il monte Follia (1031 m), il monte Neveia (835 m), il monte Santa Maria (462 m), il monte Giamanassa (405 m).
-        //    """);
-
-        //return ValueTask.FromResult<IEnumerable<ChatMessage>>([input]);
-
         return ValueTask.FromResult<IEnumerable<ChatMessage>>(
             [new(ChatRole.User, "My name is Marco"), new(ChatRole.User, $"Today is {DateTime.Now}")]
         );
