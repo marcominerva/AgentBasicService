@@ -1,6 +1,9 @@
 using System.ClientModel;
 using System.Collections.Concurrent;
+using System.Net.ServerSentEvents;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using AgentBasicService.Settings;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
@@ -15,6 +18,11 @@ builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, relo
 
 // Add services to the container.
 builder.Services.AddHttpContextAccessor();
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+});
 
 var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(builder.Configuration, "AzureOpenAI")!;
 builder.Services.AddChatClient(_ =>
@@ -114,11 +122,40 @@ app.MapPost("/api/chat", async (ChatRequest request, [FromKeyedServices("Default
     var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
     var session = await store.GetSessionAsync(agent, conversationId);
 
-    var response = await agent.RunAsync(request.Message, session);
+    var response = await agent.RunAsync(request.Message, session);    
 
     await store.SaveSessionAsync(agent, conversationId, session);
 
     return TypedResults.Ok(new ChatResponse(conversationId, response.Text));
+});
+
+app.MapPost("/api/chat/streaming", async (ChatRequest request, [FromKeyedServices("Default")] AIAgent agent, [FromKeyedServices("Default")] AgentSessionStore store, CancellationToken cancellationToken) =>
+{
+    async IAsyncEnumerable<SseItem<ChatResponse>> StreamAsync([EnumeratorCancellation] CancellationToken innerCancellationToken)
+    {
+        var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
+        var session = await store.GetSessionAsync(agent, conversationId, innerCancellationToken);
+
+        var updates = new List<AgentResponseUpdate>();
+
+        yield return new SseItem<ChatResponse>(new ChatResponse(conversationId, null), "start");
+
+        await foreach (var update in agent.RunStreamingAsync(request.Message, session, cancellationToken: innerCancellationToken))
+        {
+            updates.Add(update);
+            if (!string.IsNullOrEmpty(update.Text))
+            {
+                yield return new SseItem<ChatResponse>(new ChatResponse(null, update.Text), "delta");
+            }
+        }
+
+        await store.SaveSessionAsync(agent, conversationId, session, innerCancellationToken);
+        var response = updates.ToAgentResponse();
+
+        yield return new SseItem<ChatResponse>(new ChatResponse(null, null, response.Usage?.TotalTokenCount), "metadata");
+    }
+
+    return TypedResults.ServerSentEvents(StreamAsync(cancellationToken));
 });
 
 app.MapPost("/api/translator", async (Translation request, [FromKeyedServices("Translator")] AIAgent agent) =>
@@ -132,7 +169,7 @@ app.Run();
 
 public record class ChatRequest(string? ConversationId, string Message);
 
-public record class ChatResponse(string ConversationId, string Response);
+public record class ChatResponse(string? ConversationId, string? Response, long? TotalTokenCount = null);
 
 public record class Translation(string Message);
 
