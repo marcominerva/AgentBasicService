@@ -122,11 +122,11 @@ app.MapPost("/api/chat", async (ChatRequest request, [FromKeyedServices("Default
     var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
     var session = await store.GetSessionAsync(agent, conversationId);
 
-    var response = await agent.RunAsync(request.Message, session);    
+    var response = await agent.RunAsync(request.Message, session);
 
     await store.SaveSessionAsync(agent, conversationId, session);
 
-    return TypedResults.Ok(new ChatResponse(conversationId, response.Text));
+    return TypedResults.Ok(new ChatResponse(conversationId, response.Text, response.Usage?.TotalTokenCount));
 });
 
 app.MapPost("/api/chat/streaming", async (ChatRequest request, [FromKeyedServices("Default")] AIAgent agent, [FromKeyedServices("Default")] AgentSessionStore store, CancellationToken cancellationToken) =>
