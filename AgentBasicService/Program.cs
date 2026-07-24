@@ -165,6 +165,13 @@ app.MapPost("/api/translator", async (Translation request, [FromKeyedServices("T
     return TypedResults.Ok(new Translation(response.Messages.Last().Text));
 });
 
+app.MapDelete("/api/conversations/{id}", async (string id, [FromKeyedServices("Default")] AIAgent agent, [FromKeyedServices("Default")] AgentSessionStore store) =>
+{
+    await store.DeleteSessionAsync(agent, id);
+
+    return TypedResults.NoContent();
+});
+
 app.Run();
 
 public record class ChatRequest(string? ConversationId, string Message);
@@ -193,6 +200,13 @@ public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAcce
     {
         var key = GetKey(conversationId, agent.Id);
         sessions[key] = await agent.SerializeSessionAsync(session, cancellationToken: cancellationToken);
+    }
+
+    public override ValueTask DeleteSessionAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
+    {
+        var key = GetKey(conversationId, agent.Id);
+        sessions.TryRemove(key, out _);
+        return ValueTask.CompletedTask;
     }
 
     private static string GetKey(string conversationId, string agentId)
