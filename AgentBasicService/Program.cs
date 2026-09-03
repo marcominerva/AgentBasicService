@@ -1,10 +1,10 @@
 using System.ClientModel;
-using System.Collections.Concurrent;
+using System.ClientModel.Primitives;
 using System.Net.ServerSentEvents;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using AgentBasicService.Settings;
+using AgentBasicService.Tracing;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.AI.Workflows;
@@ -28,7 +28,12 @@ var openAISettings = builder.Services.ConfigureAndGet<AzureOpenAISettings>(build
 builder.Services.AddChatClient(_ =>
 {
     // Endpoint must end with /openai/v1 for Azure OpenAI
-    var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new() { Endpoint = new(openAISettings.Endpoint) });
+    var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new()
+    {
+        Endpoint = new(openAISettings.Endpoint),
+        Transport = new HttpClientPipelineTransport(new HttpClient(new TraceHttpClientHandler()))
+    });
+
     return openAIClient.GetResponsesClient().AsIChatClientWithStoredOutputDisabled(openAISettings.Deployment);
 });
 
@@ -68,7 +73,7 @@ builder.Services.AddAIAgent("Default", (services, key) =>
         {
             Instructions = "You are a helpful assistant that provides concise and accurate information."
         },
-        AIContextProviders = [new RagProvider(httpContextAccessor)],
+        AIContextProviders = [new UserContextProvider(httpContextAccessor)],
         ChatHistoryProvider = chatHistoryProvider
     },
     loggerFactory: services.GetRequiredService<ILoggerFactory>(),
@@ -77,7 +82,7 @@ builder.Services.AddAIAgent("Default", (services, key) =>
 .WithSessionStore((services, key) =>
 {
     var httpContextAccessor = services.GetRequiredService<IHttpContextAccessor>();
-    var agentSessionStore = new CustomAgentSessionStore(httpContextAccessor);
+    var agentSessionStore = new InMemoryAgentSessionStore(httpContextAccessor);
 
     return agentSessionStore;
 }, withIsolation: false);
@@ -138,21 +143,21 @@ app.MapPost("/api/chat/streaming", async (ChatRequest request, [FromKeyedService
 
         var updates = new List<AgentResponseUpdate>();
 
-        yield return new SseItem<ChatResponse>(new ChatResponse(conversationId, null), "start");
+        yield return new SseItem<ChatResponse>(new(conversationId, null), "start");
 
         await foreach (var update in agent.RunStreamingAsync(request.Message, session, cancellationToken: innerCancellationToken))
         {
             updates.Add(update);
             if (!string.IsNullOrEmpty(update.Text))
             {
-                yield return new SseItem<ChatResponse>(new ChatResponse(null, update.Text), "delta");
+                yield return new SseItem<ChatResponse>(new(null, update.Text), "delta");
             }
         }
 
         await store.SaveSessionAsync(agent, conversationId, session, innerCancellationToken);
         var response = updates.ToAgentResponse();
 
-        yield return new SseItem<ChatResponse>(new ChatResponse(null, null, response.Usage?.TotalTokenCount), "metadata");
+        yield return new SseItem<ChatResponse>(new(null, null, response.Usage?.TotalTokenCount), "metadata");
     }
 
     return TypedResults.ServerSentEvents(StreamAsync(cancellationToken));
@@ -165,7 +170,7 @@ app.MapPost("/api/translator", async (Translation request, [FromKeyedServices("T
     return TypedResults.Ok(new Translation(response.Messages.Last().Text));
 });
 
-app.MapDelete("/api/conversations/{id}", async (string id, [FromKeyedServices("Default")] AIAgent agent, [FromKeyedServices("Default")] AgentSessionStore store) =>
+app.MapDelete("/api/conversations/{id}", async (string id, [FromKeyedServices("Default")] AIAgent agent, [FromKeyedServices("Default")] InMemoryAgentSessionStore store) =>
 {
     await store.DeleteSessionAsync(agent, id);
 
@@ -173,53 +178,3 @@ app.MapDelete("/api/conversations/{id}", async (string id, [FromKeyedServices("D
 });
 
 app.Run();
-
-public record class ChatRequest(string? ConversationId, string Message);
-
-public record class ChatResponse(string? ConversationId, string? Response, long? TotalTokenCount = null);
-
-public record class Translation(string Message);
-
-public sealed class CustomAgentSessionStore(IHttpContextAccessor httpContextAccessor) : AgentSessionStore
-{
-    private readonly ConcurrentDictionary<string, JsonElement> sessions = new();
-
-    public override async ValueTask<AgentSession> GetSessionAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
-    {
-        var key = GetKey(conversationId, agent.Id);
-        JsonElement? sessionContent = sessions.TryGetValue(key, out var existingSession) ? existingSession : null;
-
-        return sessionContent switch
-        {
-            null => await agent.CreateSessionAsync(cancellationToken),
-            _ => await agent.DeserializeSessionAsync(sessionContent.Value, cancellationToken: cancellationToken),
-        };
-    }
-
-    public override async ValueTask SaveSessionAsync(AIAgent agent, string conversationId, AgentSession session, CancellationToken cancellationToken = default)
-    {
-        var key = GetKey(conversationId, agent.Id);
-        sessions[key] = await agent.SerializeSessionAsync(session, cancellationToken: cancellationToken);
-    }
-
-    public override ValueTask DeleteSessionAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
-    {
-        var key = GetKey(conversationId, agent.Id);
-        sessions.TryRemove(key, out _);
-        return ValueTask.CompletedTask;
-    }
-
-    private static string GetKey(string conversationId, string agentId)
-        => $"{agentId}:{conversationId}";
-}
-
-public class RagProvider(IHttpContextAccessor httpContextAccessor) : MessageAIContextProvider
-{
-    protected override ValueTask<IEnumerable<ChatMessage>> ProvideMessagesAsync(InvokingContext context, CancellationToken cancellationToken = default)
-    {
-        // Get relevant information from a knowledge base or other source. Here we hardcode it for simplicity.
-        return ValueTask.FromResult<IEnumerable<ChatMessage>>(
-            [new(ChatRole.User, "My name is Marco"), new(ChatRole.User, $"Today is {DateTime.Now}")]
-        );
-    }
-}
