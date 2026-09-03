@@ -3,7 +3,7 @@ using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Hosting;
 
-public sealed class InMemoryAgentSessionStore(IHttpContextAccessor httpContextAccessor) : AgentSessionStore
+public sealed class InMemorySessionStore(IHttpContextAccessor httpContextAccessor) : AgentSessionStore
 {
     private readonly ConcurrentDictionary<string, JsonElement> sessions = new();
 

@@ -82,7 +82,7 @@ builder.Services.AddAIAgent("Default", (services, key) =>
 .WithSessionStore((services, key) =>
 {
     var httpContextAccessor = services.GetRequiredService<IHttpContextAccessor>();
-    var agentSessionStore = new InMemoryAgentSessionStore(httpContextAccessor);
+    var agentSessionStore = new InMemorySessionStore(httpContextAccessor);
 
     return agentSessionStore;
 }, withIsolation: false);
@@ -170,7 +170,7 @@ app.MapPost("/api/translator", async (Translation request, [FromKeyedServices("T
     return TypedResults.Ok(new Translation(response.Messages.Last().Text));
 });
 
-app.MapDelete("/api/conversations/{id}", async (string id, [FromKeyedServices("Default")] AIAgent agent, [FromKeyedServices("Default")] InMemoryAgentSessionStore store) =>
+app.MapDelete("/api/conversations/{id}", async (string id, [FromKeyedServices("Default")] AIAgent agent, [FromKeyedServices("Default")] InMemorySessionStore store) =>
 {
     await store.DeleteSessionAsync(agent, id);
 
