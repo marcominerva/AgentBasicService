@@ -14,12 +14,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenAI;
-using OpenAI.Audio;
 using WorkflowBasicSample;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddSingleton(new AzureOpenAIClient(new(Constants.TranscribeEndpoint), new ApiKeyCredential(Constants.ApiKey)).GetAudioClient(Constants.TranscribeDeploymentName));
+builder.Services.AddSingleton(new AzureOpenAIClient(new(Constants.TranscribeEndpoint), new ApiKeyCredential(Constants.ApiKey))
+    .GetAudioClient(Constants.TranscribeDeploymentName).AsISpeechToTextClient());
+
 builder.Services.AddChatClient(new OpenAIClient(new ApiKeyCredential(Constants.ApiKey), new() { Endpoint = new Uri(Constants.ChatEndpoint) })
             .GetChatClient(Constants.ChatDeploymentName).AsIChatClient());
 
@@ -68,7 +69,7 @@ builder.Services.AddAIAgent("SummarizationAgent", (services, key) =>
 
 builder.AddWorkflow("TranscriptionManager", (services, key) =>
 {
-    var audioClient = services.GetRequiredService<AudioClient>();
+    var audioClient = services.GetRequiredService<ISpeechToTextClient>();
     var translatorAgent = services.GetRequiredKeyedService<AIAgent>("TranslatorAgent");
     var summarizationAgent = services.GetRequiredKeyedService<AIAgent>("SummarizationAgent");
 
@@ -146,7 +147,7 @@ catch (Exception ex)
     logger.LogError(ex, "An error occurred during workflow execution.");
 }
 
-public partial class TranscribeExecutor(AudioClient audioClient, ILogger<TranscribeExecutor> logger) : Executor(nameof(TranscribeExecutor))
+public partial class TranscribeExecutor(ISpeechToTextClient audioClient, ILogger<TranscribeExecutor> logger) : Executor(nameof(TranscribeExecutor))
 {
     [MessageHandler]
     private async ValueTask<TranscriptionResult> HandleAsync(Stream message, IWorkflowContext context, CancellationToken cancellationToken = default)
@@ -158,8 +159,8 @@ public partial class TranscribeExecutor(AudioClient audioClient, ILogger<Transcr
             message.Position = 0;
         }
 
-        var transcription = await audioClient.TranscribeAudioAsync(message, "Input.mp3", cancellationToken: cancellationToken);
-        var content = transcription.Value.Text;
+        var transcription = await audioClient.GetTextAsync(message, cancellationToken: cancellationToken);
+        var content = transcription.Text;
 
         var detector = LanguageDetectorBuilder.FromLanguages(Language.English, Language.Italian).Build();
         var detectedLanguage = detector.DetectLanguageOf(content) switch
