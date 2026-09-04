@@ -1,7 +1,7 @@
 ﻿using System.ClientModel;
+using System.ClientModel.Primitives;
 using System.Globalization;
 using System.Text;
-using Azure.AI.OpenAI;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -18,11 +18,16 @@ using WorkflowBasicSample;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddSingleton(new AzureOpenAIClient(new(Constants.TranscribeEndpoint), new ApiKeyCredential(Constants.ApiKey))
-    .GetAudioClient(Constants.TranscribeDeploymentName).AsISpeechToTextClient());
+var openAIClientOptions = new OpenAIClientOptions()
+{
+    Endpoint = new Uri(Constants.ChatEndpoint)
+};
+openAIClientOptions.AddPolicy(new AzureOpenAIAudioClientPolicy(Constants.TranscribeDeploymentName), PipelinePosition.PerCall);
 
-builder.Services.AddChatClient(new OpenAIClient(new ApiKeyCredential(Constants.ApiKey), new() { Endpoint = new Uri(Constants.ChatEndpoint) })
-            .GetChatClient(Constants.ChatDeploymentName).AsIChatClient());
+var openAIClient = new OpenAIClient(new ApiKeyCredential(Constants.ApiKey), openAIClientOptions);
+
+builder.Services.AddSingleton(openAIClient.GetAudioClient(Constants.TranscribeDeploymentName).AsISpeechToTextClient());
+builder.Services.AddChatClient(openAIClient.GetChatClient(Constants.ChatDeploymentName).AsIChatClient());
 
 builder.Services.AddAIAgent("TranslatorAgent", (services, key) =>
 {
@@ -123,6 +128,11 @@ try
             {
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.Write(response);
+
+                if (response.FinishReason == ChatFinishReason.Stop)
+                {
+                    Console.WriteLine();
+                }
             }
             else if (workflowOutputEvent.Data is Stream docxStream)
             {
@@ -130,7 +140,7 @@ try
                 await using var fileStream = File.Create(outputPath);
                 await docxStream.CopyToAsync(fileStream);
 
-                Console.WriteLine($"{Environment.NewLine}{Environment.NewLine}Summary saved to: {outputPath}");
+                Console.WriteLine($"{Environment.NewLine}Summary saved to: {outputPath}");
             }
 
             Console.ResetColor();
@@ -189,12 +199,12 @@ public partial class TranslationExecutor(AIAgent agent, ILogger<TranslationExecu
     }
 }
 
-//[YieldsOutput(typeof(AgentResponseUpdate))]
-//[SendsMessage(typeof(string))]
+[YieldsOutput(typeof(AgentResponseUpdate))]
+[SendsMessage(typeof(string))]
 public partial class SummarizeExecutor(AIAgent agent, ILogger<SummarizeExecutor> logger) : Executor(nameof(SummarizeExecutor))
 {
     [MessageHandler]
-    private async ValueTask<string> HandleAsync(TranscriptionResult message, IWorkflowContext context, CancellationToken cancellationToken)
+    private async ValueTask HandleAsync(TranscriptionResult message, IWorkflowContext context, CancellationToken cancellationToken)
     {
         logger.LogInformation("Starting summarization...");
 
@@ -207,7 +217,7 @@ public partial class SummarizeExecutor(AIAgent agent, ILogger<SummarizeExecutor>
             await context.YieldOutputAsync(update, cancellationToken);
         }
 
-        return content.ToString();
+        await context.SendMessageAsync(content.ToString(), cancellationToken);
     }
 }
 
@@ -240,3 +250,44 @@ public partial class CreateDocumentExecutor(ILogger<CreateDocumentExecutor> logg
 }
 
 public record class TranscriptionResult(string Text, string Language);
+
+internal sealed class AzureOpenAIAudioClientPolicy(string deploymentName) : PipelinePolicy
+{
+    private const string ApiVersion = "2025-03-01-preview";
+
+    public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int currentIndex)
+    {
+        RewriteAudioRequest(message);
+        ProcessNext(message, pipeline, currentIndex);
+    }
+
+    public override ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int currentIndex)
+    {
+        RewriteAudioRequest(message);
+
+        return ProcessNextAsync(message, pipeline, currentIndex);
+    }
+
+    private void RewriteAudioRequest(PipelineMessage message)
+    {
+        var uri = message.Request.Uri!;
+        var replacementPath = uri.AbsolutePath switch
+        {
+            "/openai/v1/audio/transcriptions" => $"/openai/deployments/{deploymentName}/audio/transcriptions",
+            "/openai/v1/audio/translations" => $"/openai/deployments/{deploymentName}/audio/translations",
+            "/openai/v1/audio/speech" => $"/openai/deployments/{deploymentName}/audio/speech",
+            _ => null
+        };
+
+        if (replacementPath is null)
+        {
+            return;
+        }
+
+        message.Request.Uri = new UriBuilder(uri)
+        {
+            Path = replacementPath,
+            Query = $"api-version={ApiVersion}"
+        }.Uri;
+    }
+}
