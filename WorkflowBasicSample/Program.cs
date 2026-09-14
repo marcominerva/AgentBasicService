@@ -264,7 +264,6 @@ internal sealed class AzureOpenAIAudioClientPolicy(string deploymentName) : Pipe
     public override ValueTask ProcessAsync(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int currentIndex)
     {
         RewriteAudioRequest(message);
-
         return ProcessNextAsync(message, pipeline, currentIndex);
     }
 
