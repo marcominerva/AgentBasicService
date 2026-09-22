@@ -3,6 +3,7 @@ using System.ClientModel.Primitives;
 using System.Net.ServerSentEvents;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
+using AgentBasicService.SessionStores;
 using AgentBasicService.Settings;
 using AgentBasicService.Tracing;
 using Microsoft.Agents.AI;
@@ -68,6 +69,7 @@ builder.Services.AddAIAgent("Default", (services, key) =>
 
     return chatClient.AsAIAgent(new()
     {
+        Id = key.ToLowerInvariant(),
         Name = key,
         ChatOptions = new()
         {
@@ -106,7 +108,7 @@ builder.Services.AddAIAgent("Translator", (services, key) =>
         loggerFactory: services.GetRequiredService<ILoggerFactory>(),
         services: services);
 
-    return AgentWorkflowBuilder.BuildSequential([answerer, responseTranslator]).AsAIAgent(name: key);
+    return AgentWorkflowBuilder.BuildSequential([answerer, responseTranslator]).AsAIAgent(id: key.ToLowerInvariant(), name: key);
 });
 
 builder.Services.AddOpenApi();
@@ -122,14 +124,14 @@ app.MapSwaggerUI(setupAction: options =>
     options.SwaggerEndpoint("/openapi/v1.json", app.Environment.ApplicationName);
 });
 
-app.MapPost("/api/chat", async (ChatRequest request, [FromKeyedServices("Default")] AIAgent agent, [FromKeyedServices("Default")] AgentSessionStore store) =>
+app.MapPost("/api/chat", async (ChatRequest request, [FromKeyedServices("Default")] AIAgent agent, [FromKeyedServices("Default")] AgentSessionStore store, CancellationToken cancellationToken) =>
 {
     var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
-    var session = await store.GetSessionAsync(agent, conversationId);
+    var session = await store.GetOrCreateSessionAsync(agent, new(conversationId), cancellationToken);
 
-    var response = await agent.RunAsync(request.Message, session);
+    var response = await agent.RunAsync(request.Message, session, cancellationToken: cancellationToken);
 
-    await store.SaveSessionAsync(agent, conversationId, session);
+    await store.SaveSessionAsync(agent, new(conversationId), session, cancellationToken);
 
     return TypedResults.Ok(new ChatResponse(conversationId, response.Text, response.Usage?.TotalTokenCount));
 });
@@ -139,7 +141,7 @@ app.MapPost("/api/chat/streaming", async (ChatRequest request, [FromKeyedService
     async IAsyncEnumerable<SseItem<ChatResponse>> StreamAsync([EnumeratorCancellation] CancellationToken innerCancellationToken)
     {
         var conversationId = request.ConversationId ?? Guid.NewGuid().ToString("N");
-        var session = await store.GetSessionAsync(agent, conversationId, innerCancellationToken);
+        var session = await store.GetOrCreateSessionAsync(agent, new(conversationId), innerCancellationToken);
 
         var updates = new List<AgentResponseUpdate>();
 
@@ -154,7 +156,7 @@ app.MapPost("/api/chat/streaming", async (ChatRequest request, [FromKeyedService
             }
         }
 
-        await store.SaveSessionAsync(agent, conversationId, session, innerCancellationToken);
+        await store.SaveSessionAsync(agent, new(conversationId), session, innerCancellationToken);
         var response = updates.ToAgentResponse();
 
         yield return new SseItem<ChatResponse>(new(null, null, response.Usage?.TotalTokenCount), "metadata");
@@ -168,13 +170,6 @@ app.MapPost("/api/translator", async (Translation request, [FromKeyedServices("T
     // For the sake of simplicity, we are not maintaining conversation threads in this endpoint.
     var response = await agent.RunAsync(request.Message);
     return TypedResults.Ok(new Translation(response.Messages.Last().Text));
-});
-
-app.MapDelete("/api/conversations/{id}", async (string id, [FromKeyedServices("Default")] AIAgent agent, [FromKeyedServices("Default")] InMemorySessionStore store) =>
-{
-    await store.DeleteSessionAsync(agent, id);
-
-    return TypedResults.NoContent();
 });
 
 app.Run();

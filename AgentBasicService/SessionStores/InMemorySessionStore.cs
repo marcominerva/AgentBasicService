@@ -1,37 +1,35 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Agents.AI;
-using Microsoft.Agents.AI.Hosting;
+
+namespace AgentBasicService.SessionStores;
 
 public sealed class InMemorySessionStore(IHttpContextAccessor httpContextAccessor) : AgentSessionStore
 {
     private readonly ConcurrentDictionary<string, JsonElement> sessions = new();
 
-    public override async ValueTask<AgentSession> GetSessionAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
+    public override async ValueTask<AgentSession?> GetSessionAsync(AIAgent agent, AgentSessionStoreKey key, CancellationToken cancellationToken = default)
     {
-        var key = GetKey(conversationId, agent.Id);
-        JsonElement? sessionContent = sessions.TryGetValue(key, out var existingSession) ? existingSession : null;
+        var conversationId = GetKey(agent, key);
+        var sessionContent = sessions.TryGetValue(conversationId, out var session)
+            ? await agent.DeserializeSessionAsync(session, cancellationToken: cancellationToken) : null;
 
-        return sessionContent switch
+        return sessionContent;
+    }
+
+    public override async ValueTask SaveSessionAsync(AIAgent agent, AgentSessionStoreKey key, AgentSession session, CancellationToken cancellationToken = default)
+    {
+        var conversationId = GetKey(agent, key);
+        sessions[conversationId] = await agent.SerializeSessionAsync(session, cancellationToken: cancellationToken);
+    }
+
+    public string GetKey(AIAgent agent, AgentSessionStoreKey key)
+    {
+        if (key.Partitions?.TryGetValue("isolation", out var isolationKey) == true)
         {
-            null => await agent.CreateSessionAsync(cancellationToken),
-            _ => await agent.DeserializeSessionAsync(sessionContent.Value, cancellationToken: cancellationToken),
-        };
-    }
+            return $"{agent.Id}:{isolationKey}:{key.SessionId}";
+        }
 
-    public override async ValueTask SaveSessionAsync(AIAgent agent, string conversationId, AgentSession session, CancellationToken cancellationToken = default)
-    {
-        var key = GetKey(conversationId, agent.Id);
-        sessions[key] = await agent.SerializeSessionAsync(session, cancellationToken: cancellationToken);
+        return $"{agent.Id}:{key.SessionId}";
     }
-
-    public override ValueTask DeleteSessionAsync(AIAgent agent, string conversationId, CancellationToken cancellationToken = default)
-    {
-        var key = GetKey(conversationId, agent.Id);
-        sessions.TryRemove(key, out _);
-        return ValueTask.CompletedTask;
-    }
-
-    private static string GetKey(string conversationId, string agentId)
-        => $"{agentId}:{conversationId}";
 }
