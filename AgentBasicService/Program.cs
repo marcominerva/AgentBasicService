@@ -32,7 +32,7 @@ builder.Services.AddChatClient(_ =>
     var openAIClient = new OpenAIClient(new ApiKeyCredential(openAISettings.ApiKey), new()
     {
         Endpoint = new(openAISettings.Endpoint),
-        Transport = new HttpClientPipelineTransport(new HttpClient(new TraceHttpClientHandler()))
+        Transport = new HttpClientPipelineTransport(new(new TraceHttpClientHandler()))
     });
 
     return openAIClient.GetResponsesClient().AsIChatClientWithStoredOutputDisabled(openAISettings.Deployment);
