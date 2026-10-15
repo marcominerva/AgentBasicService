@@ -145,21 +145,21 @@ app.MapPost("/api/chat/streaming", async (ChatRequest request, [FromKeyedService
 
         var updates = new List<AgentResponseUpdate>();
 
-        yield return new SseItem<ChatResponse>(new(conversationId, null), "start");
+        yield return new(new(conversationId, null), "start");
 
         await foreach (var update in agent.RunStreamingAsync(request.Message, session, cancellationToken: innerCancellationToken))
         {
             updates.Add(update);
             if (!string.IsNullOrEmpty(update.Text))
             {
-                yield return new SseItem<ChatResponse>(new(null, update.Text), "delta");
+                yield return new(new(null, update.Text), "delta");
             }
         }
 
         await store.SaveSessionAsync(agent, new(conversationId), session, innerCancellationToken);
         var response = updates.ToAgentResponse();
 
-        yield return new SseItem<ChatResponse>(new(null, null, response.Usage?.TotalTokenCount), "metadata");
+        yield return new(new(null, null, response.Usage?.TotalTokenCount), "metadata");
     }
 
     return TypedResults.ServerSentEvents(StreamAsync(cancellationToken));
