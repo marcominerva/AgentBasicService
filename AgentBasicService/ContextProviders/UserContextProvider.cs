@@ -1,6 +1,8 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
+namespace AgentBasicService.ContextProviders;
+
 public class UserContextProvider(IHttpContextAccessor httpContextAccessor) : MessageAIContextProvider
 {
     protected override ValueTask<IEnumerable<ChatMessage>> ProvideMessagesAsync(InvokingContext context, CancellationToken cancellationToken = default)

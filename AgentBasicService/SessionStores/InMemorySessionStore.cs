@@ -4,7 +4,7 @@ using Microsoft.Agents.AI;
 
 namespace AgentBasicService.SessionStores;
 
-public sealed class InMemorySessionStore(IHttpContextAccessor httpContextAccessor) : AgentSessionStore
+public sealed class InMemorySessionStore : AgentSessionStore
 {
     private readonly ConcurrentDictionary<string, JsonElement> sessions = new();
 
@@ -21,6 +21,14 @@ public sealed class InMemorySessionStore(IHttpContextAccessor httpContextAccesso
     {
         var conversationId = GetKey(agent, key);
         sessions[conversationId] = await agent.SerializeSessionAsync(session, cancellationToken: cancellationToken);
+    }
+
+    public override ValueTask DeleteSessionAsync(AIAgent agent, AgentSessionStoreKey key, CancellationToken cancellationToken = default)
+    {
+        var conversationId = GetKey(agent, key);
+        sessions.TryRemove(conversationId, out _);
+
+        return ValueTask.CompletedTask;
     }
 
     private static string GetKey(AIAgent agent, AgentSessionStoreKey key)

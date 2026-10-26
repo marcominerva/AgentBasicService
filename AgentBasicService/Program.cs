@@ -3,6 +3,7 @@ using System.ClientModel.Primitives;
 using System.Net.ServerSentEvents;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
+using AgentBasicService.ContextProviders;
 using AgentBasicService.SessionStores;
 using AgentBasicService.Settings;
 using AgentBasicService.Tracing;
@@ -83,9 +84,7 @@ builder.Services.AddAIAgent("Default", (services, key) =>
 })
 .WithSessionStore((services, key) =>
 {
-    var httpContextAccessor = services.GetRequiredService<IHttpContextAccessor>();
-    var agentSessionStore = new InMemorySessionStore(httpContextAccessor);
-
+    var agentSessionStore = new InMemorySessionStore();
     return agentSessionStore;
 }, withIsolation: false);
 
